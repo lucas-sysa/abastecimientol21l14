@@ -24,12 +24,15 @@
   fieldset { margin-bottom: 20px; }
   legend { font-weight: bold; font-size: 1.1rem; }
 
-  /* Colores para estados en filas */
-  tr.entregado {
-    background-color: #d4edda !important; /* verde claro */
+  /* Nuevos estilos para filas en visor */
+  #listaVisor table tr.no-entregado {
+    background-color: #f8d7da; /* rojo claro */
   }
-  tr.pendiente {
-    background-color: #fff3cd !important; /* amarillo claro */
+  #listaVisor table tr.pendiente {
+    background-color: #fff3cd; /* amarillo claro */
+  }
+  #listaVisor table tr.entregado {
+    background-color: #d4edda; /* verde claro */
   }
 </style>
 </head>
@@ -102,40 +105,87 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (() => {
-  function saveBloques(bloques) {
-    localStorage.setItem("abastecimiento_bloques", JSON.stringify(bloques));
-  }
-  function loadBloques() {
-    return JSON.parse(localStorage.getItem("abastecimiento_bloques") || "[]");
-  }
-
-  function saveEmbData(data) {
-    localStorage.setItem("embalajesData", JSON.stringify(data));
-  }
-  function loadEmbData() {
-    return JSON.parse(localStorage.getItem("embalajesData") || "[]");
-  }
-
-  function saveLogs(logs) {
-    localStorage.setItem("abastecimiento_logs", JSON.stringify(logs));
-  }
-  function loadLogs() {
-    return JSON.parse(localStorage.getItem("abastecimiento_logs") || "[]");
-  }
-  function agregarLog(texto) {
+  // ====== LocalStorage helpers ======
+  const saveBloques = bloques => localStorage.setItem("abastecimiento_bloques", JSON.stringify(bloques));
+  const loadBloques = () => JSON.parse(localStorage.getItem("abastecimiento_bloques") || "[]");
+  const saveEmbData = data => localStorage.setItem("embalajesData", JSON.stringify(data));
+  const loadEmbData = () => JSON.parse(localStorage.getItem("embalajesData") || "[]");
+  const saveLogs = logs => localStorage.setItem("abastecimiento_logs", JSON.stringify(logs));
+  const loadLogs = () => JSON.parse(localStorage.getItem("abastecimiento_logs") || "[]");
+  const agregarLog = texto => {
     const logs = loadLogs();
     logs.push({ texto, fecha: new Date().toLocaleString() });
     saveLogs(logs);
     renderLogs();
-  }
+  };
 
-  function calcularEmbalajesNecesarios(codigo, cantidadTotal) {
+  const calcularEmbalajesNecesarios = (codigo, cantidadTotal) => {
     const embalajesData = loadEmbData();
     if (!codigo || !cantidadTotal || cantidadTotal <= 0) return 0;
     const item = embalajesData.find(e => e.codigo === codigo);
     if (!item || !item.cantidad) return 0;
     return Math.ceil(cantidadTotal / item.cantidad);
-  }
+  };
+  // === Lectura Excel Embalajes robusta ===
+  document.getElementById("btnCargarExcelEmbalajes").onclick = () =>
+    document.getElementById("inputExcelEmbalajes").click();
+
+  document.getElementById("inputExcelEmbalajes").onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const data = new Uint8Array(ev.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      if (jsonData.length === 0) {
+        alert("El archivo de embalajes está vacío.");
+        return;
+      }
+
+      const embalajesNuevos = [];
+      jsonData.forEach(fila => {
+        const normalized = {};
+        Object.keys(fila).forEach(key => {
+          const cleanKey = key
+            .toString()
+            .trim()
+            .toLowerCase()
+            .normalize("NFD") // elimina tildes
+            .replace(/[\u0300-\u036f]/g, "");
+          normalized[cleanKey] = fila[key];
+        });
+
+        const codigo = normalized["codigo"] || "";
+        const descripcion = normalized["descripcion"] || "";
+        const cantidad = parseInt(normalized["cantidad"] || normalized["cantidad por embalaje"] || "0");
+        const tipo = normalized["tipo de embalaje"] || normalized["tipo embalaje"] || "";
+
+        if (!codigo || isNaN(cantidad) || cantidad <= 0) return;
+        embalajesNuevos.push({ codigo: codigo.toString().trim(), descripcion: descripcion.toString().trim(), cantidad, tipo: tipo.toString().trim() });
+      });
+
+      if (embalajesNuevos.length === 0) {
+        alert("No se encontraron datos válidos en el archivo de embalajes.");
+        return;
+      }
+
+      saveEmbData(embalajesNuevos);
+      agregarLog(`Datos de embalajes cargados: ${embalajesNuevos.length} registros.`);
+      alert(`Se cargaron ${embalajesNuevos.length} registros de embalajes.`);
+
+      renderTablaEmbalajes();
+      actualizarEmbalajesNecesariosEnRegistros();
+      renderListaRegistrosAdmin();
+      renderListaVisor();
+      renderFormActualizar();
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
 
   document.getElementById("btnCargarExcelSAP").onclick = () => {
     const linea = document.getElementById("lineaExcel").value.trim();
