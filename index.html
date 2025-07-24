@@ -217,53 +217,67 @@
   document.getElementById("btnCargarExcelEmbalajes").onclick = () => {
     document.getElementById("inputExcelEmbalajes").click();
   };
-  document.getElementById("inputExcelEmbalajes").onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const data = new Uint8Array(ev.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+document.getElementById("inputExcelEmbalajes").onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
 
-      if (jsonData.length === 0) {
-        alert("El archivo de embalajes está vacío.");
-        return;
-      }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const data = new Uint8Array(ev.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      const embalajesNuevos = [];
-      for (const fila of jsonData) {
-        const codigo = fila["Código"]?.toString().trim();
-        const descripcion = fila["Descripción"]?.toString().trim();
-        const cantidad = parseInt(fila["Cantidad por embalaje"]) || 0;
-        const tipo = fila["Tipo de embalaje"]?.toString().trim() || "";
+    if (jsonData.length === 0) {
+      alert("El archivo de embalajes está vacío.");
+      return;
+    }
 
-        if (!codigo || cantidad <= 0) continue;
+    const embalajesNuevos = [];
 
-        embalajesNuevos.push({ codigo, descripcion, cantidad, tipo });
-      }
+    jsonData.forEach(fila => {
+      // Normalizamos nombres de columnas (minúsculas, sin espacios extras)
+      const normalized = {};
+      Object.keys(fila).forEach(key => {
+        normalized[key.trim().toLowerCase()] = fila[key];
+      });
 
-      if (embalajesNuevos.length === 0) {
-        alert("No se encontraron datos válidos en el archivo de embalajes.");
-        return;
-      }
+      const codigo = normalized["codigo"] || normalized["código"] || "";
+      const descripcion = normalized["descripcion"] || normalized["descripción"] || "";
+      const cantidad = parseInt(normalized["cantidad"] || normalized["cantidad por embalaje"] || "0");
+      const tipo = normalized["tipo de embalaje"] || "";
 
-      saveEmbData(embalajesNuevos);
-      agregarLog(`Datos de embalajes cargados: ${embalajesNuevos.length} registros.`);
-      alert(`Se cargaron ${embalajesNuevos.length} registros de embalajes.`);
+      if (!codigo || isNaN(cantidad) || cantidad <= 0) return;
 
-      renderTablaEmbalajes();
+      embalajesNuevos.push({
+        codigo: codigo.toString().trim(),
+        descripcion: descripcion.toString().trim(),
+        cantidad,
+        tipo: tipo.toString().trim()
+      });
+    });
 
-      actualizarEmbalajesNecesariosEnRegistros();
-      renderListaRegistrosAdmin();
-      renderListaVisor();
-      renderFormActualizar();
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = "";
+    if (embalajesNuevos.length === 0) {
+      alert("No se encontraron datos válidos en el archivo de embalajes.");
+      return;
+    }
+
+    saveEmbData(embalajesNuevos);
+    agregarLog(`Datos de embalajes cargados: ${embalajesNuevos.length} registros.`);
+    alert(`Se cargaron ${embalajesNuevos.length} registros de embalajes.`);
+
+    renderTablaEmbalajes();
+
+    // Actualizar embalajes necesarios en registros administrativos
+    actualizarEmbalajesNecesariosEnRegistros();
+    renderListaRegistrosAdmin();
+    renderListaVisor();
+    renderFormActualizar();
   };
+  reader.readAsArrayBuffer(file);
+  e.target.value = "";
+};
 
   function actualizarEmbalajesNecesariosEnRegistros() {
     const bloques = loadBloques();
@@ -584,6 +598,3 @@
 
 </body>
 </html>
-
-
-
